@@ -66,6 +66,42 @@ journalctl -u bird --since "2 minutes ago"
 ```bash
 sudo cat /etc/bird/networks.conf
 ```
+Создадим файл сервиса systemd, который будет запускать программу `update_routes.py`
+```bash
+sudo nano /etc/systemd/system/update-routes.service
+```
+[Текст файла сервиса](update-routes.service).  
+Перечитать конфигурацию systemd:
+```bash
+sudo systemctl daemon-reload
+```
+Пробуем запустить сервис:
+```bash
+sudo systemctl start update-routes.service
+```
+Смотрим статус:
+```bash
+systemctl status update-routes.service
+```
+Создадим файл таймера systemd, который будет запускать update-routes.service
+каждые 5 минут
+```bash
+sudo nano /etc/systemd/system/update-routes.timer
+```
+[Текст файла таймера](update-routes.timer).
+Перечитать конфигурацию systemd:
+```bash
+sudo systemctl daemon-reload
+```
+Включить и запустить таймер:
+```bash
+sudo systemctl enable update-routes.timer
+sudo systemctl start update-routes.timer
+```
+Проверить статус таймера:
+```bash
+systemctl list-timers
+```
 3. Установка Wireguard на сервере VPN
 ```bash
 sudo apt install wireguard

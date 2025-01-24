@@ -1,0 +1,9 @@
+[Unit]
+Description=Update BIRD routes from DNS names
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/update_routes.py /hostnames
+User=root
+Group=root
