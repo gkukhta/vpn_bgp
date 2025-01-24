@@ -90,7 +90,7 @@ systemctl status update-routes.service
 ```bash
 sudo nano /etc/systemd/system/update-routes.timer
 ```
-[Текст файла таймера](update-routes.timer).
+[Текст файла таймера](update-routes.timer).  
 Перечитать конфигурацию systemd:
 ```bash
 sudo systemctl daemon-reload
@@ -141,7 +141,8 @@ sudo sysctl -p
 sudo systemctl enable wg-quick@wg0
 sudo systemctl start wg-quick@wg0
 ```
-4. Настройка Mikrotik RB450 RouterOS 7.8
+4. Настройка Mikrotik RB450 RouterOS 7.8  
+
 Настройте интерфейс ether1 для получения параметров по DHCP:
 ```
 /interface ethernet
@@ -183,4 +184,9 @@ set allow-remote-requests=yes servers=77.88.8.8,77.88.8.1
 На всякий случай сохранить конфигурацию:
 ```
 /system backup save
+```
+5. Настройка клиента wireguard на Mikrotik и добавление его на сервер.
+Сгенерируем на хосте ключи для клиента Wireguard на Mikrotik.
+```bash
+wg genkey | tee mikrotik-privkey | wg pubkey >mikrotik-pubkey
 ```
