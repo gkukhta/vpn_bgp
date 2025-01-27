@@ -6,7 +6,26 @@ import subprocess
 from ipaddress import IPv4Network
 
 # Константы
-DEFAULT_ROUTE = "10.10.12.254"  # Маршрут по умолчанию
+# DEFAULT_ROUTE = "10.10.12.254"  # Маршрут по умолчанию
+NETWORKS_FILE = "/etc/bird/networks.conf"  # Файл с сетями
+
+def get_default_route():
+    try:
+        # Выполняем команду `ip route`
+        output = subprocess.check_output(['ip', 'route'], text=True)
+        
+        # Ищем строку, содержащую default
+        for line in output.splitlines():
+            if line.startswith('default'):
+                parts = line.split()
+                # Возвращаем следующий за default gateway
+                gateway_index = parts.index('via') + 1
+                return parts[gateway_index]
+    except Exception as e:
+        print(f"Ошибка: {e}")
+        return None
+    return None
+
 
 def resolve_hosts_to_ips(filename):
     networks = set()
@@ -29,9 +48,13 @@ def resolve_hosts_to_ips(filename):
     return sorted(networks)  # Сортируем сети для удобства чтения
 
 def update_bird_config(networks):
-    with open('/etc/bird/networks.conf', 'w') as file:
+    with open(NETWORKS_FILE, 'w') as file:
+        default_route = get_default_route()
+        if not default_route:
+            print("Не удалось получить маршрут по умолчанию")
+            return
         for network in networks:
-            file.write(f"route {network} via {DEFAULT_ROUTE};\n")
+            file.write(f"route {network} via {default_route};\n")
 
     # Перезагружаем BIRD для применения изменений
     subprocess.run(['sudo', 'birdc', 'configure'], check=True)
