@@ -180,7 +180,7 @@ add chain=srcnat out-interface=ether1 action=masquerade
 ```
 Включите DNS-сервер и настройте его для кэширования:
 ```
-/ip dns set allow-remote-requests=yes servers=77.88.8.8,77.88.8.1
+/ip dns set allow-remote-requests=yes servers=10.10.198.249,10.10.198.248
 ```
 На всякий случай сохранить конфигурацию:
 ```
