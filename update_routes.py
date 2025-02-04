@@ -7,7 +7,7 @@ from ipaddress import IPv4Network
 
 # Константы
 # DEFAULT_ROUTE = "10.10.12.254"  # Маршрут по умолчанию
-NETWORKS_FILE = "/etc/bird/networks.conf"  # Файл с сетями
+NETWORKS_FILE = "/run/networks.conf"  # Файл с сетями
 
 def get_default_route():
     try:

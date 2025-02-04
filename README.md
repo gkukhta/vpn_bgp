@@ -2,19 +2,25 @@
   
 Есть список имён DNS из Интернета, которые должны с офисного маршрутизатора Mikrotik,
 на котором рабтает клиент Wireguard, 
-маршрутизироваться на сервер VPN Wireguard в Интернете, а не напрямую в Интернет по маршруту по умолчанию.  
+маршрутизироваться на сервер VPN Wireguard в Интернете, а не напрямую в Интернет по маршруту по умолчанию.
+Сервер VPN составляет таблицу сетей по именам хостов, которые должны маршрутизироваться через него.
+Чтобы таблица была короче, программа преобразует адреса /32 в сети /24. Сервер VPN анонсирует таблицу по BGP
+на клиента VPN - роутер Mikrotik.  
+Для того чтобы всегда использовался один и тот же DNS сервер у всех клиентов и на сервере VPN при составлении 
+таблицы маршрутов, которые должны идти через VPN, на паре серверов DNS настроен `VRRP` при помощи `keepalived`.
 В тестовой установке в GNS3 используются следующии версии:
 - Сервер VPN: `Debian 12`
 - Клиент VPN: `Mikrotik RB450G 7.8`
 - Клиент, подключенный к Mikrotik: `Debian 12`
+- primary и secondary DNS: `Debian 12`  
 
 ![Схема сети](net1.png)  
 
-1. Установка bird на сервере VPN.
+## 1. Установка bird на сервере VPN.
 ```bash
 sudo apt install bird
 ```
-2. Конфигурация `bird` на сервере VPN.
+## 2. Конфигурация `bird` на сервере VPN.
 ```bash
 sudo nano /etc/bird/bird.conf
 ```
@@ -106,7 +112,7 @@ sudo systemctl start update-routes.timer
 ```bash
 systemctl list-timers
 ```
-3. Установка Wireguard на сервере VPN
+## 3. Установка Wireguard на сервере VPN
 ```bash
 sudo apt install wireguard
 ```
@@ -143,7 +149,7 @@ sudo sysctl -p
 sudo systemctl enable wg-quick@wg0
 sudo systemctl start wg-quick@wg0
 ```
-4. Настройка Mikrotik RB450 RouterOS 7.8  
+## 4. Настройка Mikrotik RB450 RouterOS 7.8  
 
 Настройте интерфейс ether1 для получения параметров по DHCP:
 ```
@@ -186,7 +192,7 @@ add chain=srcnat out-interface=ether1 action=masquerade
 ```
 /system backup save
 ```
-5. Настройка клиента wireguard на Mikrotik и добавление его на сервер.  
+## 5. Настройка клиента wireguard на Mikrotik и добавление его на сервер.  
 Сгенерируем на хосте ключи для клиента Wireguard на Mikrotik.
 ```bash
 wg genkey | tee mikrotik-privkey | wg pubkey >mikrotik-pubkey
@@ -234,7 +240,7 @@ sudo systemctl restart wg-quick@wg0
 ```
 /system backup save
 ```
-6. Настройка BGP на Mikrotik  
+## 6. Настройка BGP на Mikrotik  
 Создайте шаблон для BGP:
 ```shell
 /routing bgp template add name=bgp-template-1 as=65002 router-id=192.168.134.2
@@ -252,7 +258,7 @@ sudo systemctl restart wg-quick@wg0
 /routing route print where bgp
 ```
 Сохраняем конфигурацию
-```
+```rsc
 /system backup save
 ```
 Проверяем работу.  
@@ -294,7 +300,165 @@ traceroute to www.rbc.ru (178.248.234.119), 30 hops max, 60 byte packets
 ```
 Идёт напрямую.
 
-TODO: DNS-клиенты, подключенные в разных географических местах, могут получать разрные адреса при запросах.
-Чтобы этого избежать надо настроить клиента DNS на сервере VPN соответствующим образом.  
+## 7. Настройка DNS северов. 
+### Установка BIND
+Установим BIND на оба DNS сервера:
+```shell
+sudo apt install bind9
+```
+### Настройка основного DNS-сервера (Master):
+Установите на сервер `ns1` primary DNS для зоны `example.com`,
+а на сервер `ns2` настроим вторичный сервер DNS для зоны `example.com`  
+Создание [файла](db.example.com) зоны `example.com` на сервере ns1:
+```shell
+sudo nano /etc/bind/db.example.com
+```
+Вставьте содержмое [файла](db.example.com).  
+Откройте файл конфигурации зон:
+```shell
+sudo nano /etc/bind/named.conf.local
+```
+Добавьте следующую конфигурацию для зоны `example.com`:
+```
+zone "example.com" {
+    type master;
+    file "/etc/bind/db.example.com";
+};
+```
+### Настройка вторичного DNS-сервера (Slave):  
+На вторичном сервере `ns2` отредактируйте файл конфигурации BIND:
+```bash
+sudo nano /etc/bind/named.conf.local
+```
+Добавьте зону:
+```
+zone "example.com" {
+    type slave;
+    file "/var/cache/bind/db.example.com";
+    masters { 192.168.88.5; };
+};
+```
+### Настройка кэширующего DNS-сервера (на обоих серверах).  
+BIND уже включает конфигурацию для корневых серверов в файле `/etc/bind/named.conf.default-zones`. 
+Убедитесь, что в нём есть следующая запись:
+```
+zone "." {
+    type hint;
+    file "/usr/share/dns/root.hints";
+};
+```
+Если файл `root.hints` отсутствует, загрузите его:
+```bash
+sudo wget -O /usr/share/dns/root.hints https://www.internic.net/domain/named.root
+```
+### Настройка рекурсии (на обоих серверах):  
+Откройте файл конфигурации BIND:
+```bash
+sudo nano /etc/bind/named.conf.options
+```
+Найдите или добавьте следующие параметры:
+```
+options {
+    directory "/var/cache/bind";
+    recursion yes;                  # Разрешить рекурсивные запросы
+    allow-recursion { any; };       # Разрешить рекурсивные запросы для всех клиентов
+    listen-on { any; };             # Слушать на всех интерфейсах
+    allow-transfer { none; };       # Запретить передачу зон (для безопасности)
+    dnssec-validation auto;         # Включить DNSSEC
+    auth-nxdomain no;               # Отключить ложные ответы для несуществующих доменов
+    forwarders {
+        77.88.8.8;                  # Yandex DNS
+        77.88.8.1;
+    };
+};
+```
+### Проверка конфигурации bind:  
+Master (`ns1`):
+```bash
+sudo named-checkconf
+sudo named-checkzone example.com /etc/bind/db.example.com
+```
+Slave(`ns2`):
+```bash
+sudo named-checkconf
+```
+Если ошибок нет перезапустите BIND, сначала на `ns1`, потом на `ns2`:
+```bash
+sudo systemctl reload-or-restart bind9
+```
+## 8. Настройка высокой доступности по общему адресу:
+Будем использовать unicast VRRP
+Установите `keepalived` на оба сервера:
+```bash
+sudo apt install keepalived
+```
+Настройте keepalived на обоих серверах.
+```bash
+sudo nano /etc/keepalived/keepalived.conf
+```
+Вставьте содержимое файла конфигурации:
+- [для основного сервера ns1](keepalived-ns1.conf)
+- [для резервного сервера ns2](keepalived-ns2.conf)  
+
+Перезапустите keepalived на основном и резерврном сервере:
+```bash
+sudo systemctl restart keepalived
+```
+Проверяем IP адреса на серверах:
+```bash
+ip a
+```
+Проверяем с клиента DNS запросы по общему адресу сервера DNS `192.168.88.7`:
+```bash
+dig @192.168.88.7 ns1.example.com.
+dig @192.168.88.7 www.nvidia.com.
+```
+Также для проверки можно выключить основной сервер.  
+## 9. Настройка сервера DHCP на выдачу общего адреса сервера DNS `192.168.88.7` 
+В нашей конфигурации сервер DHCP распожен на роутере Mikrotik.  
+Текущая конфигурация DHCP:
+```shell
+/ip dhcp-server network print
+```
+```
+Columns: ADDRESS, GATEWAY, DNS-SERVER
+# ADDRESS          GATEWAY       DNS-SERVER  
+0 192.168.88.0/24  192.168.88.1  192.168.88.1
+```
+Меняем сервер DNS:
+```shell
+/ip dhcp-server network set 0 dns-server=192.168.88.7
+```
+Смортим результат:
+```shell
+/ip dhcp-server network print
+```
+```
+Columns: ADDRESS, GATEWAY, DNS-SERVER
+# ADDRESS          GATEWAY       DNS-SERVER  
+0 192.168.88.0/24  192.168.88.1  192.168.88.7
+```
+## 10. Настройка клиента DNS на сервере wireguard.  
+Настроим на Mikrotik перенаправление запросов DNS с сервера wireguard на общий адрес сервера DNS.
+Это необходимо для корректной работы программы `update_routes.py`.
+```shell
+/ip firewall nat add chain=dstnat dst-address=10.10.12.57 protocol=udp dst-port=53 src-address=10.10.12.56 action=dst-nat to-addresses=192.168.88.7 to-ports=53 comment="Forward DNS UDP"
+/ip firewall nat add chain=dstnat dst-address=10.10.12.57 protocol=tcp dst-port=53 src-address=10.10.12.56 action=dst-nat to-addresses=192.168.88.7 to-ports=53 comment="Forward DNS TCP"
+```
+Настройка firewall для разрешения запросов DNS:
+```shell
+/ip firewall filter add chain=input dst-address=10.10.12.57 protocol=udp dst-port=53 src-address=10.10.12.56 action=accept comment="Allow DNS UDP from wg-srv"
+/ip firewall filter add chain=input dst-address=10.10.12.57 protocol=tcp dst-port=53 src-address=10.10.12.56 action=accept comment="Allow DNS TCP from wg-srv"
+```
+Сохранение конфигурации Wireguard:
+```shell
+/system backup save
+```
+Проверка DNS запроса на сервере wireguard:
+```bash
+dig @10.10.12.57 www.nvidia.com
+```
+Настройка клиента DNS на сервере wireguard на сервер DNS 10.10.12.57.  
+Зависит от типа подключения.
 
 TODO: Настроить firewall на сервере VPN и на Mikrotik
