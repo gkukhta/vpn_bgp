@@ -394,7 +394,7 @@ sudo apt install keepalived
 ```
 Для проверки доступности сервера DNS будет использоваться программа [dns_resolver.cpp](dns_resolver.cpp).
 Файл проекта [CmakeLists.txt](CMakeLists.txt) для её сборки. 
-Собранную программу `dns_resolver` установим в каталог `/usr/local/bin` на обоих серверах.
+Собранную программу `dns_resolver` установим в каталог `/usr/local/bin` на обоих серверах.  
 Настройте keepalived на обоих серверах.
 ```bash
 sudo nano /etc/keepalived/keepalived.conf
